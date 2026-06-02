@@ -3,6 +3,7 @@ import io
 import json
 from pathlib import Path
 
+import fitz  # pymupdf
 import streamlit as st
 from groq import Groq
 from openpyxl import Workbook
@@ -271,6 +272,19 @@ MEDIA_TYPES = {
 }
 
 
+def pdf_para_imagens(pdf_bytes: bytes) -> list[bytes]:
+    """Converte cada página do PDF em PNG (bytes) para envio à API."""
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    paginas = []
+    for pagina in doc:
+        # Renderiza em alta resolução (2x para melhor OCR)
+        mat = fitz.Matrix(2.0, 2.0)
+        pix = pagina.get_pixmap(matrix=mat)
+        paginas.append(pix.tobytes("png"))
+    doc.close()
+    return paginas
+
+
 # ── Funções ──────────────────────────────────────────────────────────────────
 def extrair_passageiros(client: Groq, imagem_bytes: bytes, media_type: str) -> list[dict]:
     imagem_b64 = base64.standard_b64encode(imagem_bytes).decode("utf-8")
@@ -372,8 +386,8 @@ client = Groq(api_key=api_key)
 st.markdown('<div class="g-section-label">Imagens das listas</div>', unsafe_allow_html=True)
 
 arquivos = st.file_uploader(
-    "Selecione ou arraste as imagens",
-    type=["jpg", "jpeg", "png", "webp"],
+    "Selecione ou arraste os arquivos",
+    type=["jpg", "jpeg", "png", "webp", "pdf"],
     accept_multiple_files=True,
     label_visibility="collapsed",
 )
@@ -382,34 +396,70 @@ if not arquivos:
     st.markdown("""
     <div class="g-empty">
         <div class="g-empty-icon">📋</div>
-        <div class="g-empty-title">Nenhuma imagem carregada</div>
-        <div class="g-empty-sub">Suporta JPG, PNG e WEBP · Uma planilha gerada por imagem</div>
+        <div class="g-empty-title">Nenhum arquivo carregado</div>
+        <div class="g-empty-sub">Suporta JPG, PNG, WEBP e PDF · Uma planilha gerada por arquivo</div>
     </div>
     """, unsafe_allow_html=True)
     st.stop()
 
 # ── Resultados ────────────────────────────────────────────────────────────────
-st.markdown(f'<div class="g-section-label" style="margin-top:28px">{len(arquivos)} imagem(ns) carregada(s)</div>', unsafe_allow_html=True)
+st.markdown(f'<div class="g-section-label" style="margin-top:28px">{len(arquivos)} arquivo(s) carregado(s)</div>', unsafe_allow_html=True)
 
 for arquivo in arquivos:
     sufixo    = Path(arquivo.name).suffix.lower()
-    media_type = MEDIA_TYPES.get(sufixo, "image/jpeg")
-    nome_base  = Path(arquivo.name).stem
+    nome_base = Path(arquivo.name).stem
+    eh_pdf    = sufixo == ".pdf"
+    icone     = "📑" if eh_pdf else "📄"
 
-    with st.expander(f"📄  {arquivo.name}", expanded=True):
-        col_img, col_info = st.columns([1, 2])
+    with st.expander(f"{icone}  {arquivo.name}", expanded=True):
+        arquivo_bytes = arquivo.read()
 
-        with col_img:
-            st.image(arquivo, use_container_width=True)
+        # ── PDF: converte páginas em imagens ──
+        if eh_pdf:
+            with st.spinner("Convertendo páginas do PDF..."):
+                paginas = pdf_para_imagens(arquivo_bytes)
 
-        with col_info:
-            with st.spinner("Analisando imagem..."):
-                passageiros = extrair_passageiros(client, arquivo.read(), media_type)
+            n_pags = len(paginas)
+            st.markdown(
+                f'<div style="font-family:Geologica,sans-serif;font-size:0.78rem;'
+                f'color:#ACB0F8;margin-bottom:12px">'
+                f'PDF com {n_pags} página(s)</div>',
+                unsafe_allow_html=True,
+            )
 
-            if not passageiros:
-                st.warning("Nenhum passageiro encontrado nesta imagem.")
+            todos = []
+            for idx, pag_bytes in enumerate(paginas, start=1):
+                with st.spinner(f"Analisando página {idx}/{n_pags}..."):
+                    resultado = extrair_passageiros(client, pag_bytes, "image/png")
+                    todos.extend(resultado)
+
+            passageiros = todos
+
+        # ── Imagem normal ──
+        else:
+            col_img, col_info = st.columns([1, 2])
+            with col_img:
+                st.image(arquivo_bytes, use_container_width=True)
+            with col_info:
+                with st.spinner("Analisando imagem..."):
+                    passageiros = extrair_passageiros(client, arquivo_bytes, MEDIA_TYPES.get(sufixo, "image/jpeg"))
+
+        # ── Resultado ──
+        if not passageiros:
+            st.warning("Nenhum passageiro encontrado neste arquivo.")
+        else:
+            n = len(passageiros)
+
+            if eh_pdf:
+                st.markdown(f"""
+                <div style="margin-bottom:12px">
+                    <span style="font-family:'Geologica',sans-serif;font-weight:700;
+                                 font-size:1.6rem;color:#020066;">{n}</span>
+                    <span style="font-family:'Abhaya Libre',serif;color:#8386C8;
+                                 font-size:0.9rem;margin-left:6px;">passageiro(s) em {len(paginas)} página(s)</span>
+                </div>
+                """, unsafe_allow_html=True)
             else:
-                n = len(passageiros)
                 st.markdown(f"""
                 <div style="margin-bottom:12px">
                     <span style="font-family:'Geologica',sans-serif;font-weight:700;
@@ -419,25 +469,25 @@ for arquivo in arquivos:
                 </div>
                 """, unsafe_allow_html=True)
 
-                st.dataframe(
-                    [{
-                        "✓": "☐",
-                        "#": i + 1,
-                        "Nome": p.get("nome") or "—",
-                        "Documento": p.get("documento") or "—",
-                        "Obs.": p.get("observacao") or "",
-                    } for i, p in enumerate(passageiros)],
-                    use_container_width=True,
-                    hide_index=True,
-                )
+            st.dataframe(
+                [{
+                    "✓": "☐",
+                    "#": i + 1,
+                    "Nome": p.get("nome") or "—",
+                    "Documento": p.get("documento") or "—",
+                    "Obs.": p.get("observacao") or "",
+                } for i, p in enumerate(passageiros)],
+                use_container_width=True,
+                hide_index=True,
+            )
 
-                st.download_button(
-                    label=f"⬇  Baixar  {nome_base}.xlsx",
-                    data=gerar_xlsx(passageiros),
-                    file_name=f"{nome_base}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True,
-                )
+            st.download_button(
+                label=f"⬇  Baixar  {nome_base}.xlsx",
+                data=gerar_xlsx(passageiros),
+                file_name=f"{nome_base}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
 
 # ── Footer ────────────────────────────────────────────────────────────────────
 st.markdown('<div class="g-footer">Gooden · Conduzindo tranquilidade</div>', unsafe_allow_html=True)
