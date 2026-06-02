@@ -1,0 +1,13 @@
+# Não enviar ao GitHub — contém a chave da API
+.streamlit/secrets.toml
+
+# Script local com chave de API
+EXECUTAR.bat
+
+# Planilhas geradas e imagens
+*.xlsx
+*.jpg
+*.jpeg
+*.png
+*.webp
+*.gif
