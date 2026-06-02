@@ -292,7 +292,7 @@ def extrair_passageiros(client: Groq, imagem_bytes: bytes, media_type: str) -> l
 
 Para cada passageiro encontrado, retorne um objeto JSON com:
 - "nome": nome completo do passageiro
-- "documento": número do documento (RG, CPF, passaporte ou qualquer número de identificação presente)
+- "documento": SOMENTE os dígitos e pontuação do número (ex: "12.345.678-9" ou "123.456.789-00"). NÃO inclua o tipo do documento (não escreva "RG", "CPF", "Doc", "Passaporte" etc.). Se houver mais de um número, retorne apenas o principal.
 - "observacao": qualquer informação adicional relevante (opcional, deixe vazio se não houver)
 
 Se um campo não estiver visível ou legível, use null.
@@ -322,7 +322,19 @@ Se a imagem não contiver lista de passageiros ou não for legível, retorne: []
 
     try:
         resultado = json.loads(texto)
-        return resultado if isinstance(resultado, list) else []
+        if not isinstance(resultado, list):
+            return []
+        # Remove rótulos de tipo de documento que possam ter vindo junto
+        import re
+        prefixos = re.compile(
+            r"^\s*(rg|cpf|doc\.?|documento|passaporte|cnh|rne|ctps|pis|nit"
+            r"|id|identidade|n[°º]?\.?)\s*[:\-]?\s*",
+            re.IGNORECASE,
+        )
+        for p in resultado:
+            if p.get("documento"):
+                p["documento"] = prefixos.sub("", str(p["documento"])).strip()
+        return resultado
     except json.JSONDecodeError:
         return []
 
