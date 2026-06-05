@@ -31,8 +31,8 @@ VEICULOS = {
     "Microônibus Convencional": 1.73,
 }
 
-MARGEM_MIN_SEMANA = 700.0
-MARGEM_MIN_FDS = 1000.0
+MARGEM_MINIMA     = 1000.0   # piso fixo absoluto
+MARGEM_PCT_ALVO   = 0.40     # meta de 40% de (RL - Custos) / Receita
 
 DETALHAMENTO_COMISSOES = {
     "Comissão de Vendas (2%)": 0.02,
@@ -41,8 +41,6 @@ DETALHAMENTO_COMISSOES = {
     "COFINS (3%)": 0.03,
     "ICMS (12%)": 0.12,
 }
-
-DIAS_PT = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
 
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 OSRM_URL = "http://router.project-osrm.org/route/v1/driving"
@@ -112,18 +110,18 @@ def _on_address_change(key: str):
         st.session_state[f"addr_{key}_sugs"] = []
         st.session_state[f"addr_{key}_erro"] = False
     st.session_state[f"addr_{key}"] = None
-    st.session_state["km_auto"] = None
-    st.session_state["km_legs"] = []
-    st.session_state["_km_val"] = 0.0
+    st.session_state["km_auto"]  = None
+    st.session_state["km_legs"]  = []
+    st.session_state["km_input"] = 0.0
 
 
 def _limpar_endereco(key: str):
     st.session_state[f"addr_{key}"] = None
     st.session_state[f"addr_{key}_sugs"] = []
     st.session_state[f"addr_{key}_erro"] = False
-    st.session_state["km_auto"] = None
-    st.session_state["km_legs"] = []
-    st.session_state["_km_val"] = 0.0
+    st.session_state["km_auto"]  = None
+    st.session_state["km_legs"]  = []
+    st.session_state["km_input"] = 0.0
 
 
 def campo_endereco(label: str, key: str, placeholder: str = "Ex: Av. Paulista, 1000, São Paulo") -> dict | None:
@@ -191,26 +189,33 @@ def campo_endereco(label: str, key: str, placeholder: str = "Ex: Av. Paulista, 1
 
 
 # ── Cálculo ───────────────────────────────────────────────────────────────────
-def eh_final_de_semana(d: date) -> bool:
-    return d.weekday() >= 5
-
-
 def calcular_margem(receita, km, custo_km, pedagio, estacionamento, agua):
     receita_liquida = receita * (1 - COMISSOES_IMPOSTOS)
-    custo_variavel = km * custo_km
-    balanco = receita_liquida - custo_variavel - pedagio - estacionamento - agua
-    margem = receita_liquida * (balanco / receita) if receita > 0 else 0.0
+    custo_variavel  = km * custo_km
+    balanco  = receita_liquida - custo_variavel - pedagio - estacionamento - agua
+    margem   = receita_liquida * (balanco / receita) if receita > 0 else 0.0
+    pct_i10  = balanco / receita if receita > 0 else 0.0   # métrica I10 da planilha
     return {
         "receita_bruta": receita, "receita_liquida": receita_liquida,
-        "custo_variavel": custo_variavel, "balanco": balanco, "margem": margem,
+        "custo_variavel": custo_variavel, "balanco": balanco,
+        "margem": margem, "pct_i10": pct_i10,
         "pedagio": pedagio, "estacionamento": estacionamento, "agua": agua,
     }
 
 
-def calcular_preco_minimo(km, custo_km, pedagio, estacionamento, agua, margem_minima):
-    fator = 1 - COMISSOES_IMPOSTOS
+def calcular_preco_sugerido(km, custo_km, pedagio, estacionamento, agua):
+    """Maior entre: preço para 40% na métrica I10  e  preço para R$ 1.000 absoluto."""
+    fator  = 1 - COMISSOES_IMPOSTOS          # 0.7235
     custos = km * custo_km + pedagio + estacionamento + agua
-    return math.ceil((margem_minima / fator + custos) / fator)
+
+    # 40%: (RL − Custos) / Receita ≥ 0.40  →  Receita = Custos / (fator − 0.40)
+    denom_pct = fator - MARGEM_PCT_ALVO      # 0.3235
+    preco_pct = math.ceil(custos / denom_pct) if denom_pct > 0 and custos > 0 else 0
+
+    # R$ 1.000 absoluto: Margem = fator × (fator × Receita − Custos) ≥ 1.000
+    preco_abs = math.ceil((MARGEM_MINIMA / fator + custos) / fator)
+
+    return max(preco_pct, preco_abs, 1)
 
 
 # ── Tipo de viagem ────────────────────────────────────────────────────────────
@@ -242,17 +247,10 @@ with col_dest:
     else:
         data_volta = data_saida
 
-# ── Badge de dia (junto às datas) ─────────────────────────────────────────────
-is_fds = eh_final_de_semana(data_saida) or (tipo_viagem == "Ida e Volta" and eh_final_de_semana(data_volta))
-margem_minima = MARGEM_MIN_FDS if is_fds else MARGEM_MIN_SEMANA
-tipo_dia_label = "Final de semana" if is_fds else "Dia de semana"
-dia_saida_nome = DIAS_PT[data_saida.weekday()]
-badge_class = "badge-fds" if is_fds else "badge-semana"
-badge_icon = "📅" if is_fds else "📆"
-
+# ── Badge de meta de precificação ─────────────────────────────────────────────
 st.markdown(
-    f'<span class="g-badge-type {badge_class}" style="margin-top:4px;margin-bottom:4px;">'
-    f'{badge_icon} {dia_saida_nome} · {tipo_dia_label} · Margem mínima: R$ {margem_minima:,.0f}'
+    f'<span class="g-badge-type badge-semana" style="margin-top:4px;margin-bottom:4px;">'
+    f'🎯 Meta: {int(MARGEM_PCT_ALVO*100)}% de margem · Mínimo absoluto: R$ {MARGEM_MINIMA:,.0f}'
     f'</span>',
     unsafe_allow_html=True,
 )
@@ -283,7 +281,7 @@ with st.expander("➕  Adicionar paradas intermediárias", expanded=False):
             st.rerun()
 
 # ── Calcular km ───────────────────────────────────────────────────────────────
-for k, v in [("km_auto", None), ("km_legs", []), ("_km_val", 0.0)]:
+for k, v in [("km_auto", None), ("km_legs", []), ("km_input", 0.0)]:
     if k not in st.session_state:
         st.session_state[k] = v
 
@@ -318,9 +316,9 @@ if tem_coords:
             km_calc, legs = calcular_km_rota(coords)
 
         if km_calc:
-            st.session_state.km_auto = km_calc
-            st.session_state.km_legs = legs
-            st.session_state["_km_val"] = km_calc
+            st.session_state.km_auto  = km_calc
+            st.session_state.km_legs  = legs
+            st.session_state["km_input"] = km_calc   # preenche o campo diretamente
             st.rerun()
         else:
             st.error("Não foi possível calcular a rota. Insira o km manualmente.")
@@ -382,10 +380,9 @@ col_v, col_km = st.columns([3, 2])
 with col_v:
     veiculo = st.selectbox("Tipo de veículo", list(VEICULOS.keys()), key="veiculo")
 with col_km:
-    km_default = float(st.session_state.get("_km_val") or 0.0)
     km_label = "Km total (ida e volta)" if tipo_viagem == "Ida e Volta" else "Km total (somente ida)"
     km = st.number_input(
-        km_label, min_value=0.0, step=10.0, value=km_default, format="%.1f", key="km_input",
+        km_label, min_value=0.0, step=10.0, format="%.1f", key="km_input",
         help="Distância total da viagem. Para Ida e Volta, inclua os dois trechos. Use o botão acima para calcular automaticamente.",
     )
 
@@ -414,24 +411,24 @@ with col_agua:
 # ── Precificação ──────────────────────────────────────────────────────────────
 st.markdown('<div class="g-section-label">Precificação</div>', unsafe_allow_html=True)
 
-preco_minimo_sugerido = calcular_preco_minimo(km, custo_km, pedagio, estacionamento, agua, margem_minima) if km > 0 else 0.0
+preco_sugerido = calcular_preco_sugerido(km, custo_km, pedagio, estacionamento, agua) if km > 0 else 0.0
 
 col_preco, col_sugestao = st.columns([2, 1])
 with col_preco:
+    if "_preco_override" in st.session_state:
+        override = st.session_state.pop("_preco_override")
+        st.session_state["preco_cobrado"] = override
     preco_cobrado = st.number_input(
         "Valor cobrado do cliente (R$)", min_value=0.0, step=50.0,
-        value=float(st.session_state.get("_preco_override", preco_minimo_sugerido)),
         format="%.2f", key="preco_cobrado",
-        help="Valor que será cobrado do cliente. O preço mínimo sugerido já garante a margem de contribuição mínima.",
+        help="Valor cobrado do cliente. O preço sugerido garante 40% de margem com mínimo de R$ 1.000.",
     )
-    if "preco_cobrado" in st.session_state:
-        st.session_state.pop("_preco_override", None)
 
 with col_sugestao:
     st.markdown(
         f'<div style="margin-top:28px;font-family:Geologica,sans-serif;font-size:0.78rem;">'
-        f'<span style="color:{c["text_faint"]};">Preço mínimo sugerido</span><br>'
-        f'<strong style="color:{c["accent"]};font-size:1.1rem;">R$ {preco_minimo_sugerido:,.2f}</strong>'
+        f'<span style="color:{c["text_faint"]};">Preço sugerido (40%)</span><br>'
+        f'<strong style="color:{c["accent"]};font-size:1.1rem;">R$ {preco_sugerido:,.2f}</strong>'
         f'</div>',
         unsafe_allow_html=True,
     )
@@ -448,8 +445,8 @@ if km <= 0:
     )
 else:
     resultado = calcular_margem(preco_cobrado, km, custo_km, pedagio, estacionamento, agua)
-    margem = resultado["margem"]
-    margem_ok = margem >= margem_minima
+    margem    = resultado["margem"]
+    margem_ok = margem >= MARGEM_MINIMA
 
     price_class = "g-result-price" if margem_ok else "g-result-price red"
     st.markdown(
@@ -465,8 +462,8 @@ else:
             f'⚠️ Margem abaixo do mínimo em R$ {diferenca:,.2f}</div>',
             unsafe_allow_html=True,
         )
-        if st.button(f"↑ Usar preço mínimo  ·  R$ {preco_minimo_sugerido:,.2f}", key="btn_usar_minimo"):
-            st.session_state["_preco_override"] = float(preco_minimo_sugerido)
+        if st.button(f"↑ Usar preço sugerido  ·  R$ {preco_sugerido:,.2f}", key="btn_usar_minimo"):
+            st.session_state["_preco_override"] = float(preco_sugerido)
             st.rerun()
 
     with st.expander("Ver detalhamento do cálculo", expanded=False):
