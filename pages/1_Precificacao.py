@@ -68,20 +68,37 @@ def _nome_curto_api(r: dict) -> str:
     return ", ".join(partes) if partes else r.get("display_name", "")
 
 
-def buscar_enderecos(query: str) -> list[dict]:
-    try:
-        resp = requests.get(
-            NOMINATIM_URL,
-            params={"q": query, "format": "json", "limit": 6, "countrycodes": "br", "addressdetails": 1},
-            headers={"User-Agent": "GoodenToolKit/1.0 (contato@gooden.com.br)"},
-            timeout=6,
-        )
-        return [
-            {"nome": _nome_curto_api(r), "lat": float(r["lat"]), "lon": float(r["lon"])}
-            for r in resp.json()
-        ]
-    except Exception:
-        return []
+def buscar_enderecos(query: str) -> tuple[list[dict], str]:
+    """Retorna (resultados, mensagem_erro). Tenta Nominatim; em caso de falha retorna erro."""
+    for tentativa in range(2):
+        try:
+            resp = requests.get(
+                NOMINATIM_URL,
+                params={
+                    "q": query,
+                    "format": "json",
+                    "limit": 6,
+                    "addressdetails": 1,
+                    # sem countrycodes para ampliar cobertura em caso de falha
+                },
+                headers={"User-Agent": "GoodenToolKit/1.0 pierogooden@gmail.com"},
+                timeout=8,
+            )
+            resp.raise_for_status()
+            dados = resp.json()
+            if not dados:
+                return [], "Nenhum resultado encontrado. Tente incluir cidade ou estado."
+            return [
+                {"nome": _nome_curto_api(r), "lat": float(r["lat"]), "lon": float(r["lon"])}
+                for r in dados
+            ], ""
+        except requests.exceptions.Timeout:
+            if tentativa == 0:
+                continue
+            return [], "Tempo de resposta esgotado. Verifique sua conexão e tente novamente."
+        except Exception as e:
+            return [], f"Erro na busca: {e}"
+    return [], "Não foi possível conectar ao serviço de endereços."
 
 
 def calcular_km_rota(coords: list[tuple]) -> tuple[float | None, list[float]]:
@@ -101,33 +118,18 @@ def calcular_km_rota(coords: list[tuple]) -> tuple[float | None, list[float]]:
 
 
 # ── Componente de endereço ────────────────────────────────────────────────────
-def _on_address_change(key: str):
-    texto = st.session_state.get(f"_ti_{key}", "").strip()
-    if len(texto) >= 3:
-        sugs = buscar_enderecos(texto)
-        st.session_state[f"addr_{key}_sugs"] = sugs
-        st.session_state[f"addr_{key}_erro"] = len(sugs) == 0
-    else:
-        st.session_state[f"addr_{key}_sugs"] = []
-        st.session_state[f"addr_{key}_erro"] = False
-    st.session_state[f"addr_{key}"] = None
-    st.session_state["km_auto"]  = None
-    st.session_state["km_legs"]  = []
-    st.session_state["km_input"] = 0.0
-
-
 def _limpar_endereco(key: str):
-    st.session_state[f"addr_{key}"] = None
+    st.session_state[f"addr_{key}"]      = None
     st.session_state[f"addr_{key}_sugs"] = []
-    st.session_state[f"addr_{key}_erro"] = False
-    st.session_state["km_auto"]  = None
-    st.session_state["km_legs"]  = []
-    st.session_state["km_input"] = 0.0
+    st.session_state[f"addr_{key}_erro"] = ""
+    st.session_state["km_auto"]          = None
+    st.session_state["km_legs"]          = []
+    st.session_state["km_input"]         = 0.0
 
 
 def campo_endereco(label: str, key: str, placeholder: str = "Ex: Av. Paulista, 1000, São Paulo") -> dict | None:
     c = get_theme()
-    for k, v in [(f"addr_{key}", None), (f"addr_{key}_sugs", []), (f"addr_{key}_erro", False)]:
+    for k, v in [(f"addr_{key}", None), (f"addr_{key}_sugs", []), (f"addr_{key}_erro", "")]:
         if k not in st.session_state:
             st.session_state[k] = v
 
@@ -141,7 +143,7 @@ def campo_endereco(label: str, key: str, placeholder: str = "Ex: Av. Paulista, 1
     )
 
     if sel:
-        # ── Estado 3: endereço confirmado → exibe chip com botão limpar ──────
+        # ── Estado 3: endereço confirmado ─────────────────────────────────────
         col_chip, col_clr = st.columns([11, 1])
         with col_chip:
             st.markdown(
@@ -156,7 +158,7 @@ def campo_endereco(label: str, key: str, placeholder: str = "Ex: Av. Paulista, 1
             st.markdown("</div>", unsafe_allow_html=True)
 
     elif sugs:
-        # ── Estado 2: sugestões disponíveis → substitui o input pelo selectbox ──
+        # ── Estado 2: mostrar resultados ──────────────────────────────────────
         nomes = [s["nome"] for s in sugs]
         escolha = st.selectbox(
             label, ["— selecione o endereço —"] + nomes,
@@ -164,7 +166,7 @@ def campo_endereco(label: str, key: str, placeholder: str = "Ex: Av. Paulista, 1
         )
         if escolha != "— selecione o endereço —":
             idx = nomes.index(escolha)
-            st.session_state[f"addr_{key}"] = sugs[idx]
+            st.session_state[f"addr_{key}"]      = sugs[idx]
             st.session_state[f"addr_{key}_sugs"] = []
             st.rerun()
         if st.button("← Nova busca", key=f"_cancel_{key}"):
@@ -172,19 +174,31 @@ def campo_endereco(label: str, key: str, placeholder: str = "Ex: Av. Paulista, 1
             st.rerun()
 
     else:
-        # ── Estado 1: campo de digitação ──────────────────────────────────────
-        st.text_input(
-            label, placeholder=placeholder,
-            key=f"_ti_{key}", label_visibility="collapsed",
-            on_change=_on_address_change, args=(key,),
-            help="Digite rua, número e cidade — pressione Enter para buscar",
-        )
-        if st.session_state[f"addr_{key}_erro"]:
+        # ── Estado 1: campo de busca ──────────────────────────────────────────
+        col_inp, col_btn = st.columns([5, 1])
+        with col_inp:
+            texto = st.text_input(
+                label, placeholder=placeholder,
+                key=f"_ti_{key}", label_visibility="collapsed",
+                help="Digite rua, número e cidade",
+            )
+        with col_btn:
+            buscar = st.button("🔍", key=f"_bb_{key}", help="Buscar endereço", use_container_width=True)
+
+        erro = st.session_state[f"addr_{key}_erro"]
+        if erro:
             st.markdown(
-                f'<div style="font-size:0.75rem;color:{c["error"]};margin-top:2px;">'
-                f'⚠️ Nenhum resultado. Tente incluir o nome da cidade.</div>',
+                f'<div style="font-size:0.75rem;color:{c["error"]};margin-top:2px;">⚠️ {erro}</div>',
                 unsafe_allow_html=True,
             )
+
+        if buscar and texto.strip():
+            with st.spinner("Buscando endereço..."):
+                resultados, msg_erro = buscar_enderecos(texto.strip())
+            st.session_state[f"addr_{key}_sugs"] = resultados
+            st.session_state[f"addr_{key}_erro"] = msg_erro
+            st.session_state[f"addr_{key}"]      = None
+            st.rerun()
 
     return sel
 
