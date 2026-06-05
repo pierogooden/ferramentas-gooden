@@ -49,15 +49,38 @@ OSRM_URL = "http://router.project-osrm.org/route/v1/driving"
 
 
 # ── Geocoding ─────────────────────────────────────────────────────────────────
+def _nome_curto_api(r: dict) -> str:
+    """Constrói nome legível a partir do addressdetails do Nominatim."""
+    addr = r.get("address", {})
+    road = addr.get("road") or addr.get("pedestrian") or addr.get("street") or ""
+    num  = addr.get("house_number", "")
+    sub  = addr.get("suburb") or addr.get("neighbourhood") or addr.get("quarter") or ""
+    city = addr.get("city") or addr.get("town") or addr.get("municipality") or addr.get("village") or ""
+    state = addr.get("state", "")
+    partes = []
+    if road:
+        partes.append(f"{road}, {num}" if num else road)
+    if sub:
+        partes.append(sub)
+    if city:
+        partes.append(city)
+    if state and state != city:
+        partes.append(state)
+    return ", ".join(partes) if partes else r.get("display_name", "")
+
+
 def buscar_enderecos(query: str) -> list[dict]:
     try:
         resp = requests.get(
             NOMINATIM_URL,
-            params={"q": query, "format": "json", "limit": 6, "countrycodes": "br"},
+            params={"q": query, "format": "json", "limit": 6, "countrycodes": "br", "addressdetails": 1},
             headers={"User-Agent": "GoodenToolKit/1.0 (contato@gooden.com.br)"},
             timeout=6,
         )
-        return [{"nome": r["display_name"], "lat": float(r["lat"]), "lon": float(r["lon"])} for r in resp.json()]
+        return [
+            {"nome": _nome_curto_api(r), "lat": float(r["lat"]), "lon": float(r["lon"])}
+            for r in resp.json()
+        ]
     except Exception:
         return []
 
@@ -89,7 +112,15 @@ def _on_address_change(key: str):
         st.session_state[f"addr_{key}_sugs"] = []
         st.session_state[f"addr_{key}_erro"] = False
     st.session_state[f"addr_{key}"] = None
-    # Invalidate km when address changes
+    st.session_state["km_auto"] = None
+    st.session_state["km_legs"] = []
+    st.session_state["_km_val"] = 0.0
+
+
+def _limpar_endereco(key: str):
+    st.session_state[f"addr_{key}"] = None
+    st.session_state[f"addr_{key}_sugs"] = []
+    st.session_state[f"addr_{key}_erro"] = False
     st.session_state["km_auto"] = None
     st.session_state["km_legs"] = []
     st.session_state["_km_val"] = 0.0
@@ -101,42 +132,17 @@ def campo_endereco(label: str, key: str, placeholder: str = "Ex: Av. Paulista, 1
         if k not in st.session_state:
             st.session_state[k] = v
 
+    sel  = st.session_state[f"addr_{key}"]
+    sugs = st.session_state[f"addr_{key}_sugs"]
+
     st.markdown(
         f'<div style="font-family:Geologica,sans-serif;font-weight:600;font-size:0.8rem;'
         f'color:{c["text_secondary"]};margin-bottom:4px;">{label}</div>',
         unsafe_allow_html=True,
     )
 
-    st.text_input(
-        label, placeholder=placeholder,
-        key=f"_ti_{key}", label_visibility="collapsed",
-        on_change=_on_address_change, args=(key,),
-        help="Digite o endereço e pressione Enter (ou clique fora) para buscar automaticamente",
-    )
-
-    if st.session_state[f"addr_{key}_erro"]:
-        st.markdown(
-            f'<div style="font-size:0.75rem;color:{c["error"]};margin-top:2px;">'
-            f'⚠️ Nenhum resultado. Tente ser mais específico.</div>',
-            unsafe_allow_html=True,
-        )
-
-    sugs = st.session_state[f"addr_{key}_sugs"]
-    if sugs:
-        nomes = [s["nome"] for s in sugs]
-        escolha = st.selectbox(
-            "Resultados", ["— selecione o endereço —"] + nomes,
-            key=f"_sel_{key}", label_visibility="collapsed",
-        )
-        if escolha != "— selecione o endereço —":
-            idx = nomes.index(escolha)
-            st.session_state[f"addr_{key}"] = sugs[idx]
-            st.session_state[f"addr_{key}_sugs"] = []
-            st.session_state[f"addr_{key}_erro"] = False
-            st.rerun()
-
-    sel = st.session_state[f"addr_{key}"]
     if sel:
+        # ── Estado 3: endereço confirmado → exibe chip com botão limpar ──────
         col_chip, col_clr = st.columns([11, 1])
         with col_chip:
             st.markdown(
@@ -145,15 +151,43 @@ def campo_endereco(label: str, key: str, placeholder: str = "Ex: Av. Paulista, 1
             )
         with col_clr:
             st.markdown("<div style='margin-top:6px'>", unsafe_allow_html=True)
-            if st.button("✕", key=f"_clr_{key}", help="Limpar endereço"):
-                st.session_state[f"addr_{key}"] = None
-                st.session_state["km_auto"] = None
-                st.session_state["km_legs"] = []
-                st.session_state["_km_val"] = 0.0
+            if st.button("✕", key=f"_clr_{key}", help="Editar endereço"):
+                _limpar_endereco(key)
                 st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
 
-    return st.session_state[f"addr_{key}"]
+    elif sugs:
+        # ── Estado 2: sugestões disponíveis → substitui o input pelo selectbox ──
+        nomes = [s["nome"] for s in sugs]
+        escolha = st.selectbox(
+            label, ["— selecione o endereço —"] + nomes,
+            key=f"_sel_{key}", label_visibility="collapsed",
+        )
+        if escolha != "— selecione o endereço —":
+            idx = nomes.index(escolha)
+            st.session_state[f"addr_{key}"] = sugs[idx]
+            st.session_state[f"addr_{key}_sugs"] = []
+            st.rerun()
+        if st.button("← Nova busca", key=f"_cancel_{key}"):
+            st.session_state[f"addr_{key}_sugs"] = []
+            st.rerun()
+
+    else:
+        # ── Estado 1: campo de digitação ──────────────────────────────────────
+        st.text_input(
+            label, placeholder=placeholder,
+            key=f"_ti_{key}", label_visibility="collapsed",
+            on_change=_on_address_change, args=(key,),
+            help="Digite rua, número e cidade — pressione Enter para buscar",
+        )
+        if st.session_state[f"addr_{key}_erro"]:
+            st.markdown(
+                f'<div style="font-size:0.75rem;color:{c["error"]};margin-top:2px;">'
+                f'⚠️ Nenhum resultado. Tente incluir o nome da cidade.</div>',
+                unsafe_allow_html=True,
+            )
+
+    return sel
 
 
 # ── Cálculo ───────────────────────────────────────────────────────────────────
@@ -356,11 +390,6 @@ with col_km:
     )
 
 custo_km = VEICULOS[veiculo]
-st.markdown(
-    f'<div style="font-family:Geologica,sans-serif;font-size:0.78rem;color:{c["text_faint"]};margin-top:-8px;">'
-    f'Custo variável: <strong style="color:{c["accent"]};">R$ {custo_km:.2f}/km</strong></div>',
-    unsafe_allow_html=True,
-)
 
 # ── Custos adicionais ─────────────────────────────────────────────────────────
 st.markdown('<div class="g-section-label">Custos Adicionais</div>', unsafe_allow_html=True)
@@ -422,32 +451,23 @@ else:
     margem = resultado["margem"]
     margem_ok = margem >= margem_minima
 
-    col_res1, col_res2 = st.columns(2)
-    with col_res1:
-        price_class = "g-result-price" if margem_ok else "g-result-price red"
+    price_class = "g-result-price" if margem_ok else "g-result-price red"
+    st.markdown(
+        f'<div class="g-result-label">Valor cobrado</div>'
+        f'<div class="{price_class}">R$ {preco_cobrado:,.2f}</div>',
+        unsafe_allow_html=True,
+    )
+
+    if not margem_ok:
+        diferenca = margem_minima - margem
         st.markdown(
-            f'<div class="g-result-label">Valor cobrado</div>'
-            f'<div class="{price_class}">R$ {preco_cobrado:,.2f}</div>',
+            f'<div style="font-size:0.82rem;color:{c["error"]};margin-top:6px;font-family:Geologica,sans-serif;">'
+            f'⚠️ Margem abaixo do mínimo em R$ {diferenca:,.2f}</div>',
             unsafe_allow_html=True,
         )
-    with col_res2:
-        margin_class = "g-margin-ok" if margem_ok else "g-margin-warn"
-        icon_m = "✅" if margem_ok else "⚠️"
-        st.markdown(
-            f'<div class="g-result-label">Margem de Contribuição</div>'
-            f'<div class="{margin_class}">{icon_m} R$ {margem:,.2f}</div>',
-            unsafe_allow_html=True,
-        )
-        if not margem_ok:
-            diferenca = margem_minima - margem
-            st.markdown(
-                f'<div style="font-size:0.75rem;color:{c["error"]};margin-top:4px;">'
-                f'Abaixo do mínimo em R$ {diferenca:,.2f}.</div>',
-                unsafe_allow_html=True,
-            )
-            if st.button(f"↑ Usar preço mínimo  ·  R$ {preco_minimo_sugerido:,.2f}", key="btn_usar_minimo"):
-                st.session_state["_preco_override"] = float(preco_minimo_sugerido)
-                st.rerun()
+        if st.button(f"↑ Usar preço mínimo  ·  R$ {preco_minimo_sugerido:,.2f}", key="btn_usar_minimo"):
+            st.session_state["_preco_override"] = float(preco_minimo_sugerido)
+            st.rerun()
 
     with st.expander("Ver detalhamento do cálculo", expanded=False):
         comissoes_valor = resultado["receita_bruta"] * COMISSOES_IMPOSTOS
