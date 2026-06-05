@@ -31,7 +31,8 @@ VEICULOS = {
     "Microônibus Convencional": 1.73,
 }
 
-MARGEM_MINIMA     = 1000.0   # piso fixo absoluto
+MARGEM_MIN_SEMANA = 700.0    # piso dias de semana (seg–sex)
+MARGEM_MIN_FDS    = 1000.0   # piso finais de semana (sáb–dom)
 MARGEM_PCT_ALVO   = 0.40     # meta de 40% de (RL - Custos) / Receita
 
 DETALHAMENTO_COMISSOES = {
@@ -203,8 +204,8 @@ def calcular_margem(receita, km, custo_km, pedagio, estacionamento, agua):
     }
 
 
-def calcular_preco_sugerido(km, custo_km, pedagio, estacionamento, agua):
-    """Maior entre: preço para 40% na métrica I10  e  preço para R$ 1.000 absoluto."""
+def calcular_preco_sugerido(km, custo_km, pedagio, estacionamento, agua, margem_minima):
+    """Maior entre: preço para 40% na métrica I10  e  preço para o piso absoluto."""
     fator  = 1 - COMISSOES_IMPOSTOS          # 0.7235
     custos = km * custo_km + pedagio + estacionamento + agua
 
@@ -212,8 +213,8 @@ def calcular_preco_sugerido(km, custo_km, pedagio, estacionamento, agua):
     denom_pct = fator - MARGEM_PCT_ALVO      # 0.3235
     preco_pct = math.ceil(custos / denom_pct) if denom_pct > 0 and custos > 0 else 0
 
-    # R$ 1.000 absoluto: Margem = fator × (fator × Receita − Custos) ≥ 1.000
-    preco_abs = math.ceil((MARGEM_MINIMA / fator + custos) / fator)
+    # Piso absoluto (R$ 700 semana / R$ 1.000 FDS)
+    preco_abs = math.ceil((margem_minima / fator + custos) / fator)
 
     return max(preco_pct, preco_abs, 1)
 
@@ -247,10 +248,22 @@ with col_dest:
     else:
         data_volta = data_saida
 
-# ── Badge de meta de precificação ─────────────────────────────────────────────
+# ── Badge de dia e margem mínima ──────────────────────────────────────────────
+DIAS_PT = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
+data_ref   = data_saida
+is_fds     = data_ref.weekday() >= 5
+if tipo_viagem == "Ida e Volta":
+    is_fds = is_fds or data_volta.weekday() >= 5
+margem_minima  = MARGEM_MIN_FDS if is_fds else MARGEM_MIN_SEMANA
+tipo_dia_label = "Final de semana" if is_fds else "Dia de semana"
+dia_nome       = DIAS_PT[data_ref.weekday()]
+badge_class    = "badge-fds" if is_fds else "badge-semana"
+badge_icon     = "📅" if is_fds else "📆"
+
 st.markdown(
-    f'<span class="g-badge-type badge-semana" style="margin-top:4px;margin-bottom:4px;">'
-    f'🎯 Meta: {int(MARGEM_PCT_ALVO*100)}% de margem · Mínimo absoluto: R$ {MARGEM_MINIMA:,.0f}'
+    f'<span class="g-badge-type {badge_class}" style="margin-top:4px;margin-bottom:4px;">'
+    f'{badge_icon} {dia_nome} · {tipo_dia_label} · '
+    f'Mínimo: R$ {margem_minima:,.0f} · Meta: {int(MARGEM_PCT_ALVO*100)}%'
     f'</span>',
     unsafe_allow_html=True,
 )
@@ -411,7 +424,7 @@ with col_agua:
 # ── Precificação ──────────────────────────────────────────────────────────────
 st.markdown('<div class="g-section-label">Precificação</div>', unsafe_allow_html=True)
 
-preco_sugerido = calcular_preco_sugerido(km, custo_km, pedagio, estacionamento, agua) if km > 0 else 0.0
+preco_sugerido = calcular_preco_sugerido(km, custo_km, pedagio, estacionamento, agua, margem_minima) if km > 0 else 0.0
 
 col_preco, col_sugestao = st.columns([2, 1])
 with col_preco:
@@ -446,7 +459,7 @@ if km <= 0:
 else:
     resultado = calcular_margem(preco_cobrado, km, custo_km, pedagio, estacionamento, agua)
     margem    = resultado["margem"]
-    margem_ok = margem >= MARGEM_MINIMA
+    margem_ok = margem >= margem_minima
 
     price_class = "g-result-price" if margem_ok else "g-result-price red"
     st.markdown(
