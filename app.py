@@ -10,7 +10,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
 st.set_page_config(
-    page_title="Gooden · Listas de Passageiros",
+    page_title="Gooden Tool Kit",
     page_icon="🚌",
     layout="centered",
 )
@@ -258,7 +258,7 @@ st.markdown("""
     <div class="g-logo">Gooden<span></span></div>
     <div class="g-header-right">
         <div class="g-header-title">Listas de Passageiros</div>
-        <div class="g-header-sub">Extração automática · Conferência simplificada</div>
+        <div class="g-header-sub">Gooden Tool Kit · Extração automática</div>
     </div>
 </div>
 """, unsafe_allow_html=True)

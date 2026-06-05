@@ -5,7 +5,7 @@ from urllib.parse import quote
 import streamlit as st
 
 st.set_page_config(
-    page_title="Gooden · Precificação de Fretamento",
+    page_title="Gooden Tool Kit · Precificação",
     page_icon="🚌",
     layout="centered",
 )
@@ -186,9 +186,14 @@ def eh_final_de_semana(d: date) -> bool:
 
 def calcular_margem(receita: float, km: float, custo_km: float,
                     pedagio: float, estacionamento: float, agua: float) -> dict:
+    # Fórmula exata da planilha:
+    # % margem = (RL - CV - P - E - A) / Receita_Bruta
+    # Margem   = Receita_Líquida × % margem
+    # Simplificado: Margem = (1 - impostos) × (RL - CV - P - E - A)
     receita_liquida = receita * (1 - COMISSOES_IMPOSTOS)
     custo_variavel = km * custo_km
-    margem = receita_liquida - custo_variavel - pedagio - estacionamento - agua
+    balanco = receita_liquida - custo_variavel - pedagio - estacionamento - agua
+    margem = receita_liquida * (balanco / receita) if receita > 0 else 0.0
     return {
         "receita_bruta": receita,
         "receita_liquida": receita_liquida,
@@ -196,6 +201,7 @@ def calcular_margem(receita: float, km: float, custo_km: float,
         "pedagio": pedagio,
         "estacionamento": estacionamento,
         "agua": agua,
+        "balanco": balanco,
         "margem": margem,
     }
 
@@ -203,8 +209,11 @@ def calcular_margem(receita: float, km: float, custo_km: float,
 def calcular_preco_minimo(km: float, custo_km: float, pedagio: float,
                           estacionamento: float, agua: float,
                           margem_minima: float) -> float:
-    custos_diretos = km * custo_km + pedagio + estacionamento + agua
-    preco_min = (margem_minima + custos_diretos) / (1 - COMISSOES_IMPOSTOS)
+    # Margem = (1 - imp) × (Receita × (1 - imp) - Custos) ≥ Margem_Min
+    # Receita = (Margem_Min / (1 - imp) + Custos) / (1 - imp)
+    fator = 1 - COMISSOES_IMPOSTOS
+    custos = km * custo_km + pedagio + estacionamento + agua
+    preco_min = (margem_minima / fator + custos) / fator
     return math.ceil(preco_min)
 
 
@@ -229,7 +238,7 @@ st.markdown("""
     <div class="g-logo">Gooden<span></span></div>
     <div class="g-header-right">
         <div class="g-header-title">Precificação de Fretamento</div>
-        <div class="g-header-sub">Margem de contribuição · Sugestão de preço</div>
+        <div class="g-header-sub">Gooden Tool Kit · Margem de contribuição</div>
     </div>
 </div>
 """, unsafe_allow_html=True)
