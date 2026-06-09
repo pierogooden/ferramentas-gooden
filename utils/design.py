@@ -124,17 +124,36 @@ section[data-testid="stMain"] {{ background-color: {c['bg']} !important; }}
 [data-testid="stTextInput"] input, [data-testid="stNumberInput"] input {{
     background-color: {c['surface']} !important;
     color: {c['text_secondary']} !important;
-    border-color: {c['border']} !important;
+    border: 1.5px solid {c['accent']} !important;
+    border-radius: 8px !important;
+    transition: border-color 0.15s, box-shadow 0.15s !important;
+}}
+[data-testid="stTextInput"] input:focus, [data-testid="stNumberInput"] input:focus {{
+    border-color: {c['accent']} !important;
+    box-shadow: 0 0 0 3px {c['shadow_btn']} !important;
+    outline: none !important;
 }}
 [data-testid="stSelectbox"] [data-baseweb="select"] > div {{
     background-color: {c['surface']} !important;
-    border-color: {c['border']} !important;
+    border: 1.5px solid {c['accent']} !important;
+    border-radius: 8px !important;
     color: {c['text_secondary']} !important;
+    transition: border-color 0.15s, box-shadow 0.15s !important;
+}}
+[data-testid="stSelectbox"] [data-baseweb="select"] > div:focus-within {{
+    box-shadow: 0 0 0 3px {c['shadow_btn']} !important;
 }}
 [data-testid="stDateInput"] input, [data-testid="stTimeInput"] input {{
     background-color: {c['surface']} !important;
     color: {c['text_secondary']} !important;
-    border-color: {c['border']} !important;
+    border: 1.5px solid {c['accent']} !important;
+    border-radius: 8px !important;
+    transition: border-color 0.15s, box-shadow 0.15s !important;
+}}
+[data-testid="stDateInput"] input:focus, [data-testid="stTimeInput"] input:focus {{
+    border-color: {c['accent']} !important;
+    box-shadow: 0 0 0 3px {c['shadow_btn']} !important;
+    outline: none !important;
 }}
 
 .stButton > button {{

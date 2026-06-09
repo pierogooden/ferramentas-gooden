@@ -4,6 +4,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils.design import get_theme, inject_css, render_header
@@ -268,3 +269,45 @@ else:
 
 # ── Footer ────────────────────────────────────────────────────────────────────
 st.markdown('<div class="g-footer">Gooden · Conduzindo tranquilidade</div>', unsafe_allow_html=True)
+
+# ── Enter → próximo campo ─────────────────────────────────────────────────────
+components.html("""
+<script>
+(function() {
+    function instalarNavegacao() {
+        var doc = window.parent.document;
+        var seletores = [
+            'input[type="number"]',
+            'input[type="text"]',
+            'input[type="date"]',
+            'input[type="time"]',
+        ].join(', ');
+
+        function aoApertar(e) {
+            if (e.key !== 'Enter') return;
+            var todos = Array.from(doc.querySelectorAll(seletores))
+                            .filter(function(el) {
+                                return !el.disabled && el.offsetParent !== null;
+                            });
+            var idx = todos.indexOf(e.target);
+            if (idx >= 0 && idx < todos.length - 1) {
+                e.preventDefault();
+                todos[idx + 1].focus();
+                todos[idx + 1].select();
+            }
+        }
+
+        // Remove listeners antigos e adiciona novos
+        doc.querySelectorAll(seletores).forEach(function(el) {
+            el.removeEventListener('keydown', aoApertar);
+            el.addEventListener('keydown', aoApertar);
+        });
+    }
+
+    // Roda ao carregar e observa mudanças no DOM (re-renders do Streamlit)
+    setTimeout(instalarNavegacao, 600);
+    var obs = new MutationObserver(function() { setTimeout(instalarNavegacao, 200); });
+    obs.observe(window.parent.document.body, { childList: true, subtree: true });
+})();
+</script>
+""", height=0)
