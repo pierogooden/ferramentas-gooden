@@ -28,6 +28,7 @@ VEICULOS = {
     "Ônibus Convencional - Motor Dianteiro": 2.48,
     "Microônibus Executivo": 1.82,
     "Microônibus Convencional": 1.73,
+    "Van Executiva 18 Lugares": round(1.73 * 0.90, 4),   # fator microônibus conv. − 10%
 }
 
 MARGEM_MIN_SEMANA = 700.0    # piso dias de semana (seg–sex)
@@ -176,6 +177,7 @@ with col_sugestao:
     )
 
 # ── Resultado ─────────────────────────────────────────────────────────────────
+efeito_js = "none"   # padrão; atualizado abaixo se km > 0
 st.divider()
 
 if km <= 0:
@@ -188,9 +190,26 @@ if km <= 0:
 else:
     resultado = calcular_margem(preco_cobrado, km, custo_km, pedagio, estacionamento, agua)
     margem    = resultado["margem"]
+    pct       = resultado["pct_i10"]   # métrica I10: (RL − Custos) / Receita
     margem_ok = margem >= margem_minima
 
-    price_class = "g-result-price" if margem_ok else "g-result-price red"
+    # Classe visual baseada na porcentagem I10
+    if pct > 0.50:
+        price_class = "g-result-price celebrate"
+        efeito_js   = "confetti"
+    elif pct > 0.40:
+        price_class = "g-result-price green"
+        efeito_js   = "none"
+    elif pct < 0.30:
+        price_class = "g-result-price danger"
+        efeito_js   = "danger"
+    elif pct < 0.35:
+        price_class = "g-result-price red"
+        efeito_js   = "none"
+    else:
+        price_class = "g-result-price"   # 35–40%: neutro
+        efeito_js   = "none"
+
     st.markdown(
         f'<div class="g-result-label">Valor cobrado</div>'
         f'<div class="{price_class}">R$ {preco_cobrado:,.2f}</div>',
@@ -270,44 +289,82 @@ else:
 # ── Footer ────────────────────────────────────────────────────────────────────
 st.markdown('<div class="g-footer">Gooden · Conduzindo tranquilidade</div>', unsafe_allow_html=True)
 
-# ── Enter → próximo campo ─────────────────────────────────────────────────────
-components.html("""
+# ── Efeitos JS (Enter → próximo campo + confetti/danger) ─────────────────────
+_efeito = efeito_js if km > 0 else "none"
+components.html(f"""
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
 <script>
-(function() {
-    function instalarNavegacao() {
-        var doc = window.parent.document;
-        var seletores = [
-            'input[type="number"]',
-            'input[type="text"]',
-            'input[type="date"]',
-            'input[type="time"]',
-        ].join(', ');
+(function() {{
+    var EFEITO = "{_efeito}";
 
-        function aoApertar(e) {
+    /* ── Navegação Enter ── */
+    function instalarNavegacao() {{
+        var doc = window.parent.document;
+        var seletores = ['input[type="number"]','input[type="text"]',
+                         'input[type="date"]','input[type="time"]'].join(',');
+
+        function aoApertar(e) {{
             if (e.key !== 'Enter') return;
             var todos = Array.from(doc.querySelectorAll(seletores))
-                            .filter(function(el) {
-                                return !el.disabled && el.offsetParent !== null;
-                            });
+                            .filter(function(el) {{ return !el.disabled && el.offsetParent !== null; }});
             var idx = todos.indexOf(e.target);
-            if (idx >= 0 && idx < todos.length - 1) {
+            if (idx >= 0 && idx < todos.length - 1) {{
                 e.preventDefault();
                 todos[idx + 1].focus();
                 todos[idx + 1].select();
-            }
-        }
-
-        // Remove listeners antigos e adiciona novos
-        doc.querySelectorAll(seletores).forEach(function(el) {
+            }}
+        }}
+        doc.querySelectorAll(seletores).forEach(function(el) {{
             el.removeEventListener('keydown', aoApertar);
             el.addEventListener('keydown', aoApertar);
-        });
-    }
+        }});
+    }}
 
-    // Roda ao carregar e observa mudanças no DOM (re-renders do Streamlit)
-    setTimeout(instalarNavegacao, 600);
-    var obs = new MutationObserver(function() { setTimeout(instalarNavegacao, 200); });
-    obs.observe(window.parent.document.body, { childList: true, subtree: true });
-})();
+    /* ── Confetti ── */
+    function dispararConfetti() {{
+        if (typeof confetti === 'undefined') return;
+        var end = Date.now() + 2200;
+        var colors = ['#5450FF','#4ADE80','#FACC15','#F472B6','#38BDF8'];
+        (function frame() {{
+            confetti({{ particleCount: 5, angle: 60, spread: 55, origin: {{ x: 0 }}, colors: colors }});
+            confetti({{ particleCount: 5, angle: 120, spread: 55, origin: {{ x: 1 }}, colors: colors }});
+            if (Date.now() < end) requestAnimationFrame(frame);
+        }})();
+    }}
+
+    /* ── Danger blink no ícone ── */
+    function mostrarPerigo() {{
+        var doc = window.parent.document;
+        var existing = doc.getElementById('_gooden_danger_overlay');
+        if (existing) return;
+        var el = doc.createElement('div');
+        el.id = '_gooden_danger_overlay';
+        el.style.cssText = 'position:fixed;top:16px;right:16px;z-index:9999;' +
+            'font-size:2rem;animation:_dng 0.8s ease-in-out infinite;pointer-events:none;';
+        el.textContent = '🚫';
+        var style = doc.createElement('style');
+        style.textContent = '@keyframes _dng{{0%,100%{{opacity:1;transform:scale(1)}}50%{{opacity:0.3;transform:scale(1.3)}}}}';
+        doc.head.appendChild(style);
+        doc.body.appendChild(el);
+        setTimeout(function() {{ if (el.parentNode) el.parentNode.removeChild(el); }}, 3000);
+    }}
+
+    function removerPerigo() {{
+        var doc = window.parent.document;
+        var el = doc.getElementById('_gooden_danger_overlay');
+        if (el && el.parentNode) el.parentNode.removeChild(el);
+    }}
+
+    /* ── Init ── */
+    setTimeout(function() {{
+        instalarNavegacao();
+        if (EFEITO === 'confetti') dispararConfetti();
+        else if (EFEITO === 'danger') mostrarPerigo();
+        else removerPerigo();
+    }}, 400);
+
+    var obs = new MutationObserver(function() {{ setTimeout(instalarNavegacao, 200); }});
+    obs.observe(window.parent.document.body, {{ childList: true, subtree: true }});
+}})();
 </script>
 """, height=0)

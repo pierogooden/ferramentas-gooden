@@ -121,6 +121,13 @@ section[data-testid="stMain"] {{ background-color: {c['bg']} !important; }}
 [data-testid="stTimeInput"] label, [data-testid="stRadio"] label,
 [data-testid="stRadio"] span {{ color: {c['text_secondary']} !important; }}
 
+[data-testid="stNumberInput"] button {{
+    display: none !important;
+}}
+[data-testid="stNumberInput"] div[data-baseweb="input"] {{
+    border-radius: 8px !important;
+}}
+
 [data-testid="stTextInput"] input, [data-testid="stNumberInput"] input {{
     background-color: {c['surface']} !important;
     color: {c['text_secondary']} !important;
@@ -247,8 +254,38 @@ hr[data-testid="stDivider"] {{ border-color: {c['border']} !important; margin: 2
 .g-result-price {{
     font-family: 'Geologica', sans-serif; font-weight: 900; font-size: 2.6rem;
     letter-spacing: -1px; line-height: 1.1; color: {c['text_primary']};
+    transition: color 0.3s ease;
 }}
-.g-result-price.red {{ color: {c['error']}; }}
+.g-result-price.green {{ color: {c['success']}; }}
+.g-result-price.red   {{ color: {c['error']}; }}
+
+@keyframes celebrate-pulse {{
+    0%   {{ text-shadow: 0 0 0px {c['success']}; }}
+    50%  {{ text-shadow: 0 0 24px {c['success']}, 0 0 48px {c['success']}88; }}
+    100% {{ text-shadow: 0 0 0px {c['success']}; }}
+}}
+.g-result-price.celebrate {{
+    color: {c['success']};
+    animation: celebrate-pulse 1.6s ease-in-out infinite;
+}}
+
+@keyframes danger-shake {{
+    0%, 100% {{ transform: translateX(0); }}
+    15%       {{ transform: translateX(-6px); }}
+    30%       {{ transform: translateX(6px); }}
+    45%       {{ transform: translateX(-4px); }}
+    60%       {{ transform: translateX(4px); }}
+    75%       {{ transform: translateX(-2px); }}
+    90%       {{ transform: translateX(2px); }}
+}}
+@keyframes danger-pulse {{
+    0%, 100% {{ text-shadow: 0 0 0px {c['error']}; }}
+    50%       {{ text-shadow: 0 0 20px {c['error']}, 0 0 40px {c['error']}88; }}
+}}
+.g-result-price.danger {{
+    color: {c['error']};
+    animation: danger-shake 0.6s ease-in-out, danger-pulse 1.2s ease-in-out 0.6s infinite;
+}}
 .g-result-label {{
     font-family: 'Geologica', sans-serif; font-weight: 600; font-size: 0.72rem;
     letter-spacing: 0.12em; text-transform: uppercase; color: {c['text_faint']}; margin-bottom: 4px;
