@@ -252,26 +252,43 @@ else:
     pct        = resultado["pct_i10"]
     margem_ok  = margem >= margem_minima
 
-    # Para dias de semana: também verifica se margem absoluta está abaixo do mínimo
-    # (O que for menor — pct ou absoluto — aciona o vermelho)
-    abaixo_abs = (not is_fds) and (margem < margem_minima)
-
-    # Prioridade: danger > red > neutro > green > celebrate
-    if pct < 0.30:
-        price_class = "g-result-price danger"
-        efeito_js   = "danger"
-    elif pct < 0.35 or abaixo_abs:
-        price_class = "g-result-price red"
-        efeito_js   = "none"
-    elif pct > 0.50:
-        price_class = "g-result-price celebrate"
-        efeito_js   = "confetti"
-    elif pct > 0.40:
-        price_class = "g-result-price green"
-        efeito_js   = "none"
+    # ── Lógica de cores ───────────────────────────────────────────────────────
+    # Dias de semana: vermelho SOMENTE quando margem absoluta < R$ 700 × dias
+    # Fins de semana / sempre: regras por porcentagem (pct_i10)
+    if not is_fds:
+        # Semana: única regra de vermelho = margem abaixo do mínimo absoluto
+        if margem < margem_minima and pct < 0.30:
+            price_class = "g-result-price danger"
+            efeito_js   = "danger"
+        elif margem < margem_minima:
+            price_class = "g-result-price red"
+            efeito_js   = "none"
+        elif pct > 0.50:
+            price_class = "g-result-price celebrate"
+            efeito_js   = "confetti"
+        elif pct > 0.40:
+            price_class = "g-result-price green"
+            efeito_js   = "none"
+        else:
+            price_class = "g-result-price"
+            efeito_js   = "none"
     else:
-        price_class = "g-result-price"   # 35–40 %: neutro
-        efeito_js   = "none"
+        # FDS: regras por porcentagem
+        if pct < 0.30:
+            price_class = "g-result-price danger"
+            efeito_js   = "danger"
+        elif pct < 0.35 or margem < margem_minima:
+            price_class = "g-result-price red"
+            efeito_js   = "none"
+        elif pct > 0.50:
+            price_class = "g-result-price celebrate"
+            efeito_js   = "confetti"
+        elif pct > 0.40:
+            price_class = "g-result-price green"
+            efeito_js   = "none"
+        else:
+            price_class = "g-result-price"
+            efeito_js   = "none"
 
     st.markdown(
         f'<div class="g-result-label">Valor cobrado</div>'
@@ -311,6 +328,12 @@ else:
         if desp_motorista:
             linhas.append(("Despesas do motorista", -desp_motorista, True))
         linhas.append(("= Margem de contribuição", resultado["margem"], False))
+        linhas.append((f"  └ % sobre receita (I10)", resultado["pct_i10"], False))
+
+        # cor da linha de % baseada nas mesmas regras de cor do preço
+        cor_pct = c["success"] if not "red" in price_class and not "danger" in price_class else c["error"]
+        if "celebrate" in price_class:
+            cor_pct = c["success"]
 
         html_rows = ""
         for lbl, val, is_custo in linhas:
@@ -321,6 +344,13 @@ else:
                     f'margin-top:4px;padding-top:10px;">'
                     f'<span class="g-breakdown-label" style="color:{c["text_secondary"]};">{lbl}</span>'
                     f'<span class="{vc}">R$ {val:,.2f}</span></div>'
+                )
+            elif lbl.strip().startswith("% sobre receita"):
+                # linha especial: exibe como porcentagem colorida
+                html_rows += (
+                    f'<div class="g-breakdown-row">'
+                    f'<span class="g-breakdown-label">{lbl}</span>'
+                    f'<span style="font-weight:700;color:{cor_pct};">{val*100:.1f}%</span></div>'
                 )
             else:
                 html_rows += (
