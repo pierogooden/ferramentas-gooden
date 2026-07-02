@@ -466,4 +466,4 @@ components.html(f"""
     obs.observe(window.parent.document.body, {{ childList: true, subtree: true }});
 }})();
 </script>
-""", height=0)
+""", height=1, scrolling=False)
