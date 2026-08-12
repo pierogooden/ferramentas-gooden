@@ -62,7 +62,7 @@ Exemplo: [{"nome": "João Silva", "documento": "12.345.678-9", "observacao": ""}
 Se a imagem não contiver lista de passageiros ou não for legível, retorne: []"""
 
     response = client.chat.completions.create(
-        model="meta-llama/llama-4-scout-17b-16e-instruct",
+        model="qwen/qwen3.6-27b",
         messages=[{
             "role": "user",
             "content": [

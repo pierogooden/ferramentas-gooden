@@ -86,7 +86,7 @@ Exemplo de resposta: {"num_os":"8086","contratante":"FEI","motorista_matricula":
 def extrair_os(imagem_bytes: bytes, media_type: str) -> dict:
     b64 = base64.standard_b64encode(imagem_bytes).decode()
     resp = client.chat.completions.create(
-        model="meta-llama/llama-4-scout-17b-16e-instruct",
+        model="qwen/qwen3.6-27b",
         messages=[{
             "role": "user",
             "content": [
