@@ -347,8 +347,8 @@ hr[data-testid="stDivider"] {{ border-color: {c['border']} !important; margin: 2
 
 _NAV_PAGES = [
     ("app.py",                       "📋", "Listas"),
-    ("pages/2_Dashboard_CRM.py",     "📊", "Dashboard"),
-    ("pages/3_Ordens_de_Servico.py", "🚌", "OS"),
+    ("pages/1_Precificacao.py",      "💰", "Calculadora"),
+    ("pages/3_Ordens_de_Servico.py", "🚌", "Ordens de Serviço"),
 ]
 
 
