@@ -4,6 +4,7 @@ Extrai dados das fotos das OS e gera um arquivo Excel com 3 abas para download.
 """
 import base64
 import json
+import re
 import sys
 from pathlib import Path
 from datetime import date, datetime
