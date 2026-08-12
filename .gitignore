@@ -11,3 +11,10 @@ EXECUTAR.bat
 *.png
 *.webp
 *.gif
+
+# Claude Code — sessões e memória local
+.claude/
+
+# Python cache
+__pycache__/
+*.pyc
