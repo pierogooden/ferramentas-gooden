@@ -442,6 +442,17 @@ def gerar_download(dados_list: list) -> bytes:
     preenchidas com os dados das OS fornecidas.
     Retorna os bytes prontos para download.
     """
+    # Ordena por data crescente, depois por número de OS crescente
+    def _sort_key(d):
+        data = get_data(d.get("data_saida")) or date.min
+        try:
+            num = int(str(d.get("num_os", "0")).strip())
+        except (ValueError, TypeError):
+            num = 0
+        return (data, num)
+
+    dados_list = sorted(dados_list, key=_sort_key)
+
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment
 
