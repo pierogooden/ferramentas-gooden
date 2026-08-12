@@ -81,6 +81,8 @@ html, body, [class*="css"], .stApp {{
     background-color: {c['bg']} !important;
 }}
 #MainMenu, footer, header {{ visibility: hidden; }}
+[data-testid="collapsedControl"] {{ visibility: visible !important; }}
+section[data-testid="stSidebarCollapsedControl"] {{ visibility: visible !important; }}
 .block-container {{ padding-top: 2rem !important; padding-bottom: 3rem !important; max-width: 800px !important; }}
 
 [data-testid="stAppViewContainer"],
@@ -343,7 +345,25 @@ hr[data-testid="stDivider"] {{ border-color: {c['border']} !important; margin: 2
 </style>""", unsafe_allow_html=True)
 
 
+def render_sidebar():
+    c = get_theme()
+    with st.sidebar:
+        st.markdown(f"""
+        <div style="padding:20px 8px 12px 8px;border-bottom:1px solid {c['border']};margin-bottom:12px">
+            <div style="font-family:'Geologica',sans-serif;font-weight:900;font-size:1.4rem;
+                        color:{c['logo']};letter-spacing:-1px">Gooden<span style="display:inline-block;
+                        width:5px;height:5px;background:{c['dot']};border-radius:50%;
+                        margin-left:2px;vertical-align:super"></span></div>
+            <div style="font-size:0.7rem;color:{c['text_faint']};margin-top:2px;
+                        font-family:'Geologica',sans-serif;letter-spacing:0.06em">Tool Kit</div>
+        </div>""", unsafe_allow_html=True)
+        st.page_link("app.py",                          label="Listas de Passageiros", icon="📋")
+        st.page_link("pages/2_Dashboard_CRM.py",        label="Dashboard CRM",         icon="📊")
+        st.page_link("pages/3_Ordens_de_Servico.py",    label="Ordens de Serviço",     icon="🚌")
+
+
 def render_header(title: str, subtitle: str, page_key: str = ""):
+    render_sidebar()
     dark = st.session_state.get("dark_mode", False)
     icon = "☀️" if dark else "🌙"
     col_h, col_t = st.columns([12, 1])
