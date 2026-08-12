@@ -345,27 +345,19 @@ hr[data-testid="stDivider"] {{ border-color: {c['border']} !important; margin: 2
 </style>""", unsafe_allow_html=True)
 
 
-def render_sidebar():
-    c = get_theme()
-    with st.sidebar:
-        st.markdown(f"""
-        <div style="padding:20px 8px 12px 8px;border-bottom:1px solid {c['border']};margin-bottom:12px">
-            <div style="font-family:'Geologica',sans-serif;font-weight:900;font-size:1.4rem;
-                        color:{c['logo']};letter-spacing:-1px">Gooden<span style="display:inline-block;
-                        width:5px;height:5px;background:{c['dot']};border-radius:50%;
-                        margin-left:2px;vertical-align:super"></span></div>
-            <div style="font-size:0.7rem;color:{c['text_faint']};margin-top:2px;
-                        font-family:'Geologica',sans-serif;letter-spacing:0.06em">Tool Kit</div>
-        </div>""", unsafe_allow_html=True)
-        st.page_link("app.py",                          label="Listas de Passageiros", icon="📋")
-        st.page_link("pages/2_Dashboard_CRM.py",        label="Dashboard CRM",         icon="📊")
-        st.page_link("pages/3_Ordens_de_Servico.py",    label="Ordens de Serviço",     icon="🚌")
+_NAV_PAGES = [
+    ("app.py",                       "📋", "Listas"),
+    ("pages/2_Dashboard_CRM.py",     "📊", "Dashboard"),
+    ("pages/3_Ordens_de_Servico.py", "🚌", "OS"),
+]
 
 
 def render_header(title: str, subtitle: str, page_key: str = ""):
-    render_sidebar()
+    c = get_theme()
     dark = st.session_state.get("dark_mode", False)
     icon = "☀️" if dark else "🌙"
+
+    # ── Logo + título + toggle ──
     col_h, col_t = st.columns([12, 1])
     with col_h:
         st.markdown(f"""
@@ -382,3 +374,9 @@ def render_header(title: str, subtitle: str, page_key: str = ""):
             toggle_dark_mode()
             st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
+
+    # ── Barra de navegação ──
+    nav_cols = st.columns(len(_NAV_PAGES))
+    for col, (path, ico, label) in zip(nav_cols, _NAV_PAGES):
+        with col:
+            st.page_link(path, label=f"{ico} {label}", use_container_width=True)
