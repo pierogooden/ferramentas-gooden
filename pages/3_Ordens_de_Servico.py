@@ -94,17 +94,35 @@ def extrair_os(imagem_bytes: bytes, media_type: str) -> dict:
                 {"type": "text", "text": _PROMPT},
             ],
         }],
-        max_tokens=1500,
+        max_tokens=2000,
         temperature=0,
+        reasoning_effort="none",  # desativa thinking mode do Qwen3
     )
     texto = resp.choices[0].message.content.strip()
+
+    # Remove blocos <think>...</think> caso existam
+    texto = re.sub(r"<think>.*?</think>", "", texto, flags=re.DOTALL).strip()
+
+    # Remove delimitadores de markdown
     if texto.startswith("```"):
         linhas = texto.split("\n")
         texto = "\n".join(linhas[1:-1] if linhas[-1].strip() == "```" else linhas[1:])
+
+    # Tenta parse direto
     try:
         return json.loads(texto)
     except json.JSONDecodeError:
-        return {}
+        pass
+
+    # Fallback: extrai primeiro objeto JSON encontrado no texto
+    m = re.search(r"\{.*\}", texto, re.DOTALL)
+    if m:
+        try:
+            return json.loads(m.group())
+        except json.JSONDecodeError:
+            pass
+
+    return {}
 
 
 def enriquecer(d: dict) -> dict:

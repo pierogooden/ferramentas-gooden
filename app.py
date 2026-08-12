@@ -72,8 +72,12 @@ Se a imagem não contiver lista de passageiros ou não for legível, retorne: []
         }],
         max_tokens=4096,
         temperature=0,
+        reasoning_effort="none",
     )
     texto = response.choices[0].message.content.strip()
+
+    import re as _re
+    texto = _re.sub(r"<think>.*?</think>", "", texto, flags=_re.DOTALL).strip()
 
     if texto.startswith("```"):
         linhas = texto.split("\n")
