@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from utils.design import inject_css, render_header
 
 st.set_page_config(
-    page_title="Gooden Tool Kit",
+    page_title="Canivete Gooden",
     page_icon="🚌",
     layout="centered",
 )

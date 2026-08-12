@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils.design import get_theme, inject_css, render_header
 
 st.set_page_config(
-    page_title="Gooden Tool Kit · Precificação",
+    page_title="Canivete Gooden · Precificação",
     page_icon="🚌",
     layout="centered",
 )

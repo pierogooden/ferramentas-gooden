@@ -19,7 +19,7 @@ from utils.planilhas_os import (
 )
 
 st.set_page_config(
-    page_title="OS → Planilhas | Gooden",
+    page_title="Canivete Gooden · OS",
     page_icon="🚌",
     layout="wide",
 )
@@ -269,7 +269,6 @@ with aba_download:
             "O arquivo gerado terá 3 abas: **Km Turismo**, **Análise de Resultados** e **Comissão dos Motoristas**."
         )
 
-        # Resumo das OS
         for d in dados:
             st.markdown(
                 f"- OS **{d.get('num_os')}** · {d.get('motorista_nome', '?')} · "
@@ -278,7 +277,6 @@ with aba_download:
 
         st.divider()
 
-        # Detecta nome do arquivo pelo mês das OS
         datas_validas = [get_data(d.get("data_saida")) for d in dados if d.get("data_saida")]
         if datas_validas:
             meses_pt = ["", "Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
