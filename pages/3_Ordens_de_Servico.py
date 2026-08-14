@@ -86,20 +86,26 @@ Exemplo de resposta: {"num_os":"8086","contratante":"FEI","motorista_matricula":
 
 def extrair_os(imagem_bytes: bytes, media_type: str) -> dict:
     b64 = base64.standard_b64encode(imagem_bytes).decode()
-    resp = client.chat.completions.create(
-        model="qwen/qwen3.6-27b",
-        messages=[{
-            "role": "user",
-            "content": [
-                {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{b64}"}},
-                {"type": "text", "text": _PROMPT},
-            ],
-        }],
-        max_tokens=2000,
-        temperature=0,
-        reasoning_effort="none",  # desativa thinking mode do Qwen3
-    )
-    texto = resp.choices[0].message.content.strip()
+    try:
+        resp = client.chat.completions.create(
+            model="qwen/qwen3.6-27b",
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{b64}"}},
+                    {"type": "text", "text": _PROMPT},
+                ],
+            }],
+            max_tokens=2000,
+            temperature=0,
+            reasoning_effort="none",  # desativa thinking mode do Qwen3
+        )
+    except Exception:
+        return {"_erro": "api"}
+    try:
+        texto = resp.choices[0].message.content.strip()
+    except (IndexError, AttributeError):
+        return {"_erro": "api"}
 
     # Remove blocos <think>...</think> caso existam
     texto = re.sub(r"<think>.*?</think>", "", texto, flags=re.DOTALL).strip()
@@ -184,16 +190,21 @@ with aba_upload:
                 with st.spinner(f"Analisando {arq.name}…"):
                     raw = extrair_os(arq.read(), mt)
 
-                if not raw.get("num_os"):
-                    erros.append(arq.name)
+                if raw.get("_erro") == "api":
+                    erros.append((arq.name, "Erro na API Groq"))
+                elif not raw.get("num_os"):
+                    erros.append((arq.name, "num_os não encontrado — verifique se a imagem é legível"))
                 else:
-                    d = enriquecer(raw)
-                    d["_arquivo"] = arq.name
-                    chave = (str(d.get("num_os")), d.get("prefixo"))
-                    if chave not in [(str(x.get("num_os")), x.get("prefixo"))
-                                     for x in st.session_state.dados_os]:
-                        st.session_state.dados_os.append(d)
-                        novos += 1
+                    try:
+                        d = enriquecer(raw)
+                        d["_arquivo"] = arq.name
+                        chave = (str(d.get("num_os")), d.get("prefixo"))
+                        if chave not in [(str(x.get("num_os")), x.get("prefixo"))
+                                         for x in st.session_state.dados_os]:
+                            st.session_state.dados_os.append(d)
+                            novos += 1
+                    except Exception:
+                        erros.append((arq.name, "Erro ao processar campos extraídos — verifique a imagem"))
 
                 barra.progress((i + 1) / len(arquivos), text=f"{arq.name} ✓")
 
@@ -201,7 +212,9 @@ with aba_upload:
             if novos:
                 st.success(f"✅ {novos} OS extraída(s). Vá para a aba **Revisão**.")
             if erros:
-                st.warning(f"⚠️ Não foi possível extrair: {', '.join(erros)}")
+                st.warning("⚠️ Não foi possível extrair os seguintes arquivos:")
+                for nome_arq, motivo in erros:
+                    st.markdown(f"- **{nome_arq}**: {motivo}")
 
     else:
         st.info("Carregue as fotos das Ordens de Serviço acima para começar.")

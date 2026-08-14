@@ -1,6 +1,7 @@
 import base64
 import io
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -30,13 +31,17 @@ MEDIA_TYPES = {
     ".webp": "image/webp",
 }
 
+_PREFIXOS_DOC = re.compile(
+    r"^\s*(rg|cpf|doc\.?|documento|passaporte|cnh|rne|ctps|pis|nit"
+    r"|id|identidade|n[°º]?\.?)\s*[:\-]?\s*",
+    re.IGNORECASE,
+)
+
 
 def pdf_para_imagens(pdf_bytes: bytes) -> list[bytes]:
-    """Converte cada página do PDF em PNG (bytes) para envio à API."""
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     paginas = []
     for pagina in doc:
-        # Renderiza em alta resolução (2x para melhor OCR)
         mat = fitz.Matrix(2.0, 2.0)
         pix = pagina.get_pixmap(matrix=mat)
         paginas.append(pix.tobytes("png"))
@@ -44,62 +49,66 @@ def pdf_para_imagens(pdf_bytes: bytes) -> list[bytes]:
     return paginas
 
 
-# ── Funções ──────────────────────────────────────────────────────────────────
+def _limpar_json(texto: str) -> str:
+    texto = re.sub(r"<think>.*?</think>", "", texto, flags=re.DOTALL).strip()
+    if texto.startswith("```"):
+        linhas = texto.split("\n")
+        texto = "\n".join(linhas[1:-1] if linhas[-1].strip() == "```" else linhas[1:])
+    return texto.strip()
+
+
 def extrair_passageiros(client: Groq, imagem_bytes: bytes, media_type: str) -> list[dict]:
-    imagem_b64 = base64.standard_b64encode(imagem_bytes).decode("utf-8")
     prompt = """Analise esta imagem de uma lista de passageiros e extraia TODOS os dados visíveis.
 
 Para cada passageiro encontrado, retorne um objeto JSON com:
 - "nome": nome completo do passageiro
-- "documento": SOMENTE os dígitos e pontuação do número (ex: "12.345.678-9" ou "123.456.789-00"). NÃO inclua o tipo do documento (não escreva "RG", "CPF", "Doc", "Passaporte" etc.). Se houver mais de um número, retorne apenas o principal.
+- "documento": SOMENTE os dígitos e pontuação do número (ex: "12.345.678-9" ou "123.456.789-00"). NÃO inclua o tipo do documento. Se houver mais de um número, retorne apenas o principal.
 - "observacao": qualquer informação adicional relevante (opcional, deixe vazio se não houver)
 
 Se um campo não estiver visível ou legível, use null.
-
-Responda SOMENTE com um array JSON válido, sem texto adicional, sem markdown, sem explicações.
+Responda SOMENTE com um array JSON válido, sem texto adicional, sem markdown.
 Exemplo: [{"nome": "João Silva", "documento": "12.345.678-9", "observacao": ""}, ...]
-
 Se a imagem não contiver lista de passageiros ou não for legível, retorne: []"""
 
-    response = client.chat.completions.create(
-        model="qwen/qwen3.6-27b",
-        messages=[{
-            "role": "user",
-            "content": [
-                {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{imagem_b64}"}},
-                {"type": "text", "text": prompt},
-            ],
-        }],
-        max_tokens=4096,
-        temperature=0,
-        reasoning_effort="none",
-    )
-    texto = response.choices[0].message.content.strip()
+    imagem_b64 = base64.standard_b64encode(imagem_bytes).decode("utf-8")
+    try:
+        response = client.chat.completions.create(
+            model="qwen/qwen3.6-27b",
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{imagem_b64}"}},
+                    {"type": "text", "text": prompt},
+                ],
+            }],
+            max_tokens=4096,
+            temperature=0,
+            reasoning_effort="none",
+        )
+    except Exception as e:
+        st.error(f"Erro na API Groq: {e}")
+        return []
 
-    import re as _re
-    texto = _re.sub(r"<think>.*?</think>", "", texto, flags=_re.DOTALL).strip()
-
-    if texto.startswith("```"):
-        linhas = texto.split("\n")
-        texto = "\n".join(linhas[1:-1] if linhas[-1].strip() == "```" else linhas[1:])
+    texto = _limpar_json(response.choices[0].message.content.strip())
 
     try:
         resultado = json.loads(texto)
         if not isinstance(resultado, list):
             return []
-        # Remove rótulos de tipo de documento que possam ter vindo junto
-        import re
-        prefixos = re.compile(
-            r"^\s*(rg|cpf|doc\.?|documento|passaporte|cnh|rne|ctps|pis|nit"
-            r"|id|identidade|n[°º]?\.?)\s*[:\-]?\s*",
-            re.IGNORECASE,
-        )
-        for p in resultado:
-            if p.get("documento"):
-                p["documento"] = prefixos.sub("", str(p["documento"])).strip()
-        return resultado
     except json.JSONDecodeError:
-        return []
+        m = re.search(r"\[.*\]", texto, re.DOTALL)
+        if m:
+            try:
+                resultado = json.loads(m.group())
+            except json.JSONDecodeError:
+                return []
+        else:
+            return []
+
+    for p in resultado:
+        if p.get("documento"):
+            p["documento"] = _PREFIXOS_DOC.sub("", str(p["documento"])).strip()
+    return resultado
 
 
 def gerar_xlsx(passageiros: list[dict]) -> bytes:
@@ -107,9 +116,9 @@ def gerar_xlsx(passageiros: list[dict]) -> bytes:
     ws = wb.active
     ws.title = "Passageiros"
 
-    cor_header = "020066"
-    cor_par    = "F4F5FF"
-    f_header   = Font(name="Calibri", bold=True, color="FFFFFF", size=11)
+    cor_header  = "020066"
+    cor_par     = "F4F5FF"
+    f_header    = Font(name="Calibri", bold=True, color="FFFFFF", size=11)
     fill_header = PatternFill(fill_type="solid", fgColor=cor_header)
     fill_par    = PatternFill(fill_type="solid", fgColor=cor_par)
 
@@ -128,7 +137,10 @@ def gerar_xlsx(passageiros: list[dict]) -> bytes:
         linha = i + 1
         ws.cell(row=linha, column=1, value="☐").alignment = Alignment(horizontal="center", vertical="center")
         ws.cell(row=linha, column=1).font = Font(name="Calibri", size=13)
-        for col, val in enumerate([i, p.get("nome") or "", p.get("documento") or "", p.get("observacao") or ""], start=2):
+        for col, val in enumerate(
+            [i, p.get("nome") or "", p.get("documento") or "", p.get("observacao") or ""],
+            start=2,
+        ):
             cel = ws.cell(row=linha, column=col, value=val)
             cel.alignment = Alignment(vertical="center", wrap_text=True)
         if linha % 2 == 0:
@@ -178,7 +190,10 @@ if not arquivos:
     st.stop()
 
 # ── Resultados ────────────────────────────────────────────────────────────────
-st.markdown(f'<div class="g-section-label" style="margin-top:28px">{len(arquivos)} arquivo(s) carregado(s)</div>', unsafe_allow_html=True)
+st.markdown(
+    f'<div class="g-section-label" style="margin-top:28px">{len(arquivos)} arquivo(s) carregado(s)</div>',
+    unsafe_allow_html=True,
+)
 
 for arquivo in arquivos:
     sufixo    = Path(arquivo.name).suffix.lower()
@@ -189,60 +204,48 @@ for arquivo in arquivos:
     with st.expander(f"{icone}  {arquivo.name}", expanded=True):
         arquivo_bytes = arquivo.read()
 
-        # ── PDF: converte páginas em imagens ──
         if eh_pdf:
-            with st.spinner("Convertendo páginas do PDF..."):
-                paginas = pdf_para_imagens(arquivo_bytes)
+            with st.spinner("Convertendo páginas do PDF…"):
+                try:
+                    paginas = pdf_para_imagens(arquivo_bytes)
+                except Exception as e:
+                    st.error(f"Não foi possível abrir o PDF: {e}")
+                    continue
 
             n_pags = len(paginas)
-            st.markdown(
-                f'<div style="font-family:Geologica,sans-serif;font-size:0.78rem;'
-                f'color:#ACB0F8;margin-bottom:12px">'
-                f'PDF com {n_pags} página(s)</div>',
-                unsafe_allow_html=True,
-            )
+            st.caption(f"PDF com {n_pags} página(s)")
 
             todos = []
             for idx, pag_bytes in enumerate(paginas, start=1):
-                with st.spinner(f"Analisando página {idx}/{n_pags}..."):
+                with st.spinner(f"Analisando página {idx}/{n_pags}…"):
                     resultado = extrair_passageiros(client, pag_bytes, "image/png")
                     todos.extend(resultado)
-
             passageiros = todos
 
-        # ── Imagem normal ──
         else:
             col_img, col_info = st.columns([1, 2])
             with col_img:
                 st.image(arquivo_bytes, use_container_width=True)
             with col_info:
-                with st.spinner("Analisando imagem..."):
-                    passageiros = extrair_passageiros(client, arquivo_bytes, MEDIA_TYPES.get(sufixo, "image/jpeg"))
+                with st.spinner("Analisando imagem…"):
+                    passageiros = extrair_passageiros(
+                        client, arquivo_bytes, MEDIA_TYPES.get(sufixo, "image/jpeg")
+                    )
 
-        # ── Resultado ──
         if not passageiros:
-            st.warning("Nenhum passageiro encontrado neste arquivo.")
+            st.warning("Nenhum passageiro encontrado neste arquivo. Verifique se a imagem é legível.")
         else:
             n = len(passageiros)
-
-            if eh_pdf:
-                st.markdown(f"""
-                <div style="margin-bottom:12px">
-                    <span style="font-family:'Geologica',sans-serif;font-weight:700;
-                                 font-size:1.6rem;color:#020066;">{n}</span>
-                    <span style="font-family:'Abhaya Libre',serif;color:#8386C8;
-                                 font-size:0.9rem;margin-left:6px;">passageiro(s) em {len(paginas)} página(s)</span>
-                </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.markdown(f"""
-                <div style="margin-bottom:12px">
-                    <span style="font-family:'Geologica',sans-serif;font-weight:700;
-                                 font-size:1.6rem;color:#020066;">{n}</span>
-                    <span style="font-family:'Abhaya Libre',serif;color:#8386C8;
-                                 font-size:0.9rem;margin-left:6px;">passageiro(s) identificado(s)</span>
-                </div>
-                """, unsafe_allow_html=True)
+            sufixo_pag = f" em {len(paginas)} página(s)" if eh_pdf else ""
+            st.markdown(
+                f'<div style="margin-bottom:12px">'
+                f'<span style="font-family:\'Geologica\',sans-serif;font-weight:700;'
+                f'font-size:1.6rem;color:#020066;">{n}</span>'
+                f'<span style="font-family:\'Abhaya Libre\',serif;color:#8386C8;'
+                f'font-size:0.9rem;margin-left:6px;">passageiro(s) identificado(s){sufixo_pag}</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
 
             st.dataframe(
                 [{

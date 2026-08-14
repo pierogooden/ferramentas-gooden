@@ -126,6 +126,14 @@ else:
     data_volta = data_saida
     hora_volta = hora_saida
 
+# ── Validação de datas (Ida e Volta) ──────────────────────────────────────────
+if tipo_viagem == "Ida e Volta":
+    dt_saida = datetime.combine(data_saida, hora_saida)
+    dt_volta = datetime.combine(data_volta, hora_volta)
+    if dt_volta < dt_saida:
+        st.error("A data/hora de volta não pode ser anterior à data/hora de saída.")
+        st.stop()
+
 # ── Duração e dias de serviço ─────────────────────────────────────────────────
 duracao_horas, num_dias, desp_motorista = calcular_servico(
     tipo_viagem, data_saida, hora_saida, data_volta, hora_volta
