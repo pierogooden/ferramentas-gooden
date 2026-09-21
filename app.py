@@ -73,7 +73,7 @@ Se a imagem não contiver lista de passageiros ou não for legível, retorne: []
     imagem_b64 = base64.standard_b64encode(imagem_bytes).decode("utf-8")
     try:
         response = client.chat.completions.create(
-            model="qwen/qwen3.6-27b",
+            model="meta-llama/llama-4-scout-17b-16e-instruct",
             messages=[{
                 "role": "user",
                 "content": [
