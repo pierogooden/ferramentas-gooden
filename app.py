@@ -73,7 +73,7 @@ Se a imagem não contiver lista de passageiros ou não for legível, retorne: []
     imagem_b64 = base64.standard_b64encode(imagem_bytes).decode("utf-8")
     try:
         response = client.chat.completions.create(
-            model="google/gemini-flash-1.5:free",
+            model="google/gemini-2.0-flash-exp:free",
             messages=[{
                 "role": "user",
                 "content": [
