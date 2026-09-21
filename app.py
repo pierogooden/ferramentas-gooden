@@ -7,7 +7,7 @@ from pathlib import Path
 
 import fitz  # pymupdf
 import streamlit as st
-from groq import Groq
+from openai import OpenAI
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
@@ -57,7 +57,7 @@ def _limpar_json(texto: str) -> str:
     return texto.strip()
 
 
-def extrair_passageiros(client: Groq, imagem_bytes: bytes, media_type: str) -> list[dict]:
+def extrair_passageiros(client: OpenAI, imagem_bytes: bytes, media_type: str) -> list[dict]:
     prompt = """Analise esta imagem de uma lista de passageiros e extraia TODOS os dados visíveis.
 
 Para cada passageiro encontrado, retorne um objeto JSON com:
@@ -73,7 +73,7 @@ Se a imagem não contiver lista de passageiros ou não for legível, retorne: []
     imagem_b64 = base64.standard_b64encode(imagem_bytes).decode("utf-8")
     try:
         response = client.chat.completions.create(
-            model="meta-llama/llama-4-scout-17b-16e-instruct",
+            model="google/gemini-flash-1.5:free",
             messages=[{
                 "role": "user",
                 "content": [
@@ -83,7 +83,6 @@ Se a imagem não contiver lista de passageiros ou não for legível, retorne: []
             }],
             max_tokens=4096,
             temperature=0,
-            reasoning_effort="none",
         )
     except Exception as e:
         st.error(f"Erro na API Groq: {e}")
@@ -158,16 +157,16 @@ def gerar_xlsx(passageiros: list[dict]) -> bytes:
 
 # ── API ───────────────────────────────────────────────────────────────────────
 try:
-    api_key = st.secrets["GROQ_API_KEY"]
+    api_key = st.secrets["OPENROUTER_API_KEY"]
 except Exception:
     import os
-    api_key = os.getenv("GROQ_API_KEY", "")
+    api_key = os.getenv("OPENROUTER_API_KEY", "")
 
 if not api_key:
-    st.error("⚠️ Chave GROQ_API_KEY não configurada nos Secrets.")
+    st.error("⚠️ Chave OPENROUTER_API_KEY não configurada nos Secrets.")
     st.stop()
 
-client = Groq(api_key=api_key)
+client = OpenAI(api_key=api_key, base_url="https://openrouter.ai/api/v1")
 
 # ── Upload ────────────────────────────────────────────────────────────────────
 st.markdown('<div class="g-section-label">Imagens das listas</div>', unsafe_allow_html=True)
